@@ -1,56 +1,94 @@
 package org.example;
+import java.sql.*;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class ClientService {
-    private Map<Long, Client> clientsMap;
-    private long idCounter;
+    private Connection connection;
 
-    public ClientService() {
-        this.clientsMap = new HashMap<>();
-        this.idCounter = 0;
+    public ClientService(Connection connection) {
+        this.connection = connection;
+        initializeDatabase();
     }
 
-    public long create(String name) {
+    private void initializeDatabase() {
+        try {
+            Statement statement = connection.createStatement();
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS clients (id SERIAL PRIMARY KEY, name VARCHAR(255))");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public long create(String name) throws SQLException {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("Name cannot be null or empty");
         }
 
-        Client newClient = new Client(++idCounter, name);
-        clientsMap.put(newClient.getId(), newClient);
-        return newClient.getId();
-    }
-
-    public String getById(long id) {
-        Client client = clientsMap.get(id);
-        if (client == null) {
-            throw new IllegalArgumentException("Client with id " + id + " not found");
+        String insertQuery = "INSERT INTO clients (name) VALUES (?)";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(insertQuery, Statement.RETURN_GENERATED_KEYS)) {
+            preparedStatement.setString(1, name);
+            preparedStatement.executeUpdate();
+            ResultSet generatedKeys = preparedStatement.getGeneratedKeys();
+            if (generatedKeys.next()) {
+                return generatedKeys.getLong(1);
+            } else {
+                throw new SQLException("Creating client failed, no ID obtained.");
+            }
         }
-        return client.getName();
     }
 
-    public void setName(long id, String name) {
+    public String getById(long id) throws SQLException {
+        String selectQuery = "SELECT name FROM clients WHERE id = ?";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(selectQuery)) {
+            preparedStatement.setLong(1, id);
+            ResultSet resultSet = preparedStatement.executeQuery();
+            if (resultSet.next()) {
+                return resultSet.getString("name");
+            } else {
+                throw new IllegalArgumentException("Client with id " + id + " not found");
+            }
+        }
+    }
+
+    public void setName(long id, String name) throws SQLException {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("Name cannot be null or empty");
         }
 
-        Client client = clientsMap.get(id);
-        if (client == null) {
-            throw new IllegalArgumentException("Client with id " + id + " not found");
+        String updateQuery = "UPDATE clients SET name = ? WHERE id = ?";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(updateQuery)) {
+            preparedStatement.setString(1, name);
+            preparedStatement.setLong(2, id);
+            int updatedRows = preparedStatement.executeUpdate();
+            if (updatedRows == 0) {
+                throw new IllegalArgumentException("Client with id " + id + " not found");
+            }
         }
-        client.setName(name);
     }
 
-    public void deleteById(long id) {
-        if (!clientsMap.containsKey(id)) {
-            throw new IllegalArgumentException("Client with id " + id + " not found");
+    public void deleteById(long id) throws SQLException {
+        String deleteQuery = "DELETE FROM clients WHERE id = ?";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(deleteQuery)) {
+            preparedStatement.setLong(1, id);
+            int deletedRows = preparedStatement.executeUpdate();
+            if (deletedRows == 0) {
+                throw new IllegalArgumentException("Client with id " + id + " not found");
+            }
         }
-        clientsMap.remove(id);
     }
 
-    public List<Client> listAll() {
-        return new ArrayList<>(clientsMap.values());
+    public List<Client> listAll() throws SQLException {
+        List<Client> clients = new ArrayList<>();
+        String selectQuery = "SELECT * FROM clients";
+        try (Statement statement = connection.createStatement()) {
+            ResultSet resultSet = statement.executeQuery(selectQuery);
+            while (resultSet.next()) {
+                long id = resultSet.getLong("id");
+                String name = resultSet.getString("name");
+                clients.add(new Client(id, name));
+            }
+        }
+        return clients;
     }
 }
